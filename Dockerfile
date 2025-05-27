@@ -5,7 +5,7 @@ FROM apify/actor-node-playwright-chrome:18
 COPY package*.json ./
 
 # Install dependencies
-RUN npm ci --only=production \
+RUN npm install --only=production \
     && npm cache clean --force
 
 # Copy source code
