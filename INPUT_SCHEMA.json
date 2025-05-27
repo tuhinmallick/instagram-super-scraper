@@ -56,12 +56,8 @@
     "usernames": {
       "title": "Usernames List",
       "type": "array",
-      "description": "List of usernames for bulk followers count check. Required for: Followers Count scraper.",
-      "editor": "stringList",
-      "items": {
-        "type": "string"
-      },
-      "example": ["username1", "username2", "username3"]
+      "description": "List of usernames for bulk followers count check. Required for: Followers Count scraper. Enter one username per line.",
+      "editor": "stringList"
     },
     "limit": {
       "title": "Results Limit",
