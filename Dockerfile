@@ -1,7 +1,7 @@
 FROM apify/actor-node-playwright-chrome:20
 
 COPY package*.json ./
-RUN npm ci --only=production --no-optional
+RUN npm install --only=production --no-optional
 
 COPY . ./
 
