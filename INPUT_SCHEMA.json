@@ -35,28 +35,28 @@
     "profileUrl": {
       "title": "Profile URL or Username",
       "type": "string",
-      "description": "Instagram profile URL or username (e.g., 'username' or 'https://instagram.com/username')",
+      "description": "Instagram profile URL or username (e.g., 'username' or 'https://instagram.com/username'). Required for: Profile, Reels, Mentions, Quick Posts scrapers.",
       "editor": "textfield",
       "example": "cristiano"
     },
     "hashtag": {
       "title": "Hashtag",
       "type": "string", 
-      "description": "Hashtag to scrape (without the # symbol)",
+      "description": "Hashtag to scrape without the # symbol (e.g., 'travel'). Required for: Hashtag, Hashtag Stats scrapers.",
       "editor": "textfield",
       "example": "travel"
     },
     "postUrl": {
       "title": "Post URL",
       "type": "string",
-      "description": "Full Instagram post or reel URL",
+      "description": "Full Instagram post or reel URL. Required for: Post, Comments scrapers.",
       "editor": "textfield",
       "example": "https://www.instagram.com/p/ABC123/"
     },
     "usernames": {
       "title": "Usernames List",
       "type": "array",
-      "description": "List of usernames for bulk followers count check",
+      "description": "List of usernames for bulk followers count check. Required for: Followers Count scraper.",
       "editor": "stringList",
       "items": {
         "type": "string"
@@ -66,7 +66,7 @@
     "limit": {
       "title": "Results Limit",
       "type": "integer",
-      "description": "Maximum number of items to scrape",
+      "description": "Maximum number of items to scrape (used for scrapers that return multiple results)",
       "minimum": 1,
       "maximum": 1000,
       "default": 20
@@ -74,61 +74,12 @@
     "proxyConfiguration": {
       "title": "Proxy Configuration",
       "type": "object",
-      "description": "Proxy settings for avoiding rate limits",
-      "prefill": { "useApifyProxy": true },
-      "default": { "useApifyProxy": true },
-      "editor": "proxy"
+      "description": "Proxy settings for avoiding rate limits (recommended for production use)",
+      "editor": "proxy",
+      "default": {
+        "useApifyProxy": true
+      }
     }
   },
-  "required": ["scraperType"],
-  "allOf": [
-    {
-      "if": {
-        "properties": { 
-          "scraperType": { 
-            "enum": ["profile", "reels", "mentions", "quick-posts"] 
-          } 
-        }
-      },
-      "then": {
-        "required": ["profileUrl"]
-      }
-    },
-    {
-      "if": {
-        "properties": { 
-          "scraperType": { 
-            "enum": ["hashtag", "hashtag-stats"] 
-          } 
-        }
-      },
-      "then": {
-        "required": ["hashtag"]
-      }
-    },
-    {
-      "if": {
-        "properties": { 
-          "scraperType": { 
-            "enum": ["post", "comments"] 
-          } 
-        }
-      },
-      "then": {
-        "required": ["postUrl"]
-      }
-    },
-    {
-      "if": {
-        "properties": { 
-          "scraperType": { 
-            "const": "followers-count" 
-          } 
-        }
-      },
-      "then": {
-        "required": ["usernames"]
-      }
-    }
-  ]
+  "required": ["scraperType"]
 }
