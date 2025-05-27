@@ -1,6 +1,6 @@
 {
   "title": "🔥 Instagram Multi-Purpose Scraper",
-  "description": "Extract comprehensive data from Instagram with multiple scraping modes. Choose your scraping type and configure the specific fields below. 🚀 Quick start: Select 'Profile Scraper' and enter a username to try it out. 📖 Need help? Check the README for detailed instructions and examples.",
+  "description": "Extract comprehensive data from Instagram with multiple scraping modes. Choose your scraping type and configure the specific fields below. 🚀 Quick start: Select 'Profile Scraper' and enter a username to try it out.",
   "type": "object",
   "schemaVersion": 1,
   "properties": {
@@ -39,9 +39,6 @@
       "type": "array",
       "description": "List of Instagram usernames to scrape (without @). Required for: Profile, Posts, Reels, Followers, Quick Check modes.",
       "editor": "stringList",
-      "items": {
-        "type": "string"
-      },
       "prefill": ["google", "instagram"],
       "sectionCaption": "📝 Target Accounts"
     },
@@ -51,9 +48,6 @@
       "type": "array", 
       "description": "List of hashtags to scrape (without #). Required for: Hashtag and Hashtag Stats modes.",
       "editor": "stringList",
-      "items": {
-        "type": "string"
-      },
       "prefill": ["travel", "food", "technology"],
       "sectionCaption": "🏷️ Hashtag Targets"
     },
@@ -62,10 +56,7 @@
       "title": "🔗 Instagram Post URLs",
       "type": "array",
       "description": "Full Instagram post URLs to scrape comments from. Required for: Comments mode.",
-      "editor": "stringList", 
-      "items": {
-        "type": "string"
-      },
+      "editor": "stringList",
       "prefill": ["https://www.instagram.com/p/EXAMPLE123/"],
       "sectionCaption": "💬 Comment Sources"
     },
@@ -75,9 +66,6 @@
       "type": "array",
       "description": "Terms to search for mentions. Required for: Mentions mode.",
       "editor": "stringList",
-      "items": {
-        "type": "string" 
-      },
       "prefill": ["your brand", "your product"],
       "sectionCaption": "🏷️ Mention Tracking"
     },
@@ -85,7 +73,7 @@
     "maxItems": {
       "title": "📊 Maximum Items",
       "type": "integer",
-      "description": "Maximum number of items to scrape overall (applies to all modes)",
+      "description": "Maximum number of items to scrape overall",
       "minimum": 1,
       "maximum": 10000,
       "default": 1000,

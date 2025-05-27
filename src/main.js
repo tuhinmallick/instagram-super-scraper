@@ -1,297 +1,6 @@
+// main.js - Multi-Purpose Instagram Scraper Actor
 import { Actor } from 'apify';
-import { PlaywrightCrawler, RequestQueue } from 'crawlee';
-// routes.js - Request routing and handling
-import { createPlaywrightRouter } from 'crawlee';
-
-export const router = createPlaywrightRouter();
-
-// Profile scraping handler
-router.addHandler('profile', async ({ page, request, log }) => {
-    const { username, maxPosts, includeStories, includeHighlights } = request.userData;
-    
-    try {
-        // Wait for page to load and get initial data
-        await page.waitForSelector('main', { timeout: 30000 });
-        
-        // Extract profile data from page
-        const profileData = await page.evaluate(() => {
-            // Look for JSON data in script tags
-            const scripts = Array.from(document.querySelectorAll('script'));
-            for (const script of scripts) {
-                if (script.textContent?.includes('window._sharedData')) {
-                    const match = script.textContent.match(/window\._sharedData\s*=\s*({.+?});/);
-                    if (match) {
-                        return JSON.parse(match[1]);
-                    }
-                }
-            }
-            return null;
-        });
-        
-        if (!profileData) {
-            throw new Error('Could not extract profile data');
-        }
-        
-        const user = profileData.entry_data?.ProfilePage?.[0]?.graphql?.user;
-        
-        if (!user) {
-            throw new Error('User data not found in page');
-        }
-        
-        const result = {
-            type: 'profile',
-            username: user.username,
-            fullName: user.full_name,
-            biography: user.biography,
-            followersCount: user.edge_followed_by?.count || 0,
-            followingCount: user.edge_follow?.count || 0,
-            postsCount: user.edge_owner_to_timeline_media?.count || 0,
-            profilePicUrl: user.profile_pic_url_hd || user.profile_pic_url,
-            isVerified: user.is_verified,
-            isPrivate: user.is_private,
-            externalUrl: user.external_url,
-            businessCategory: user.business_category_name,
-            scrapedAt: new Date().toISOString(),
-        };
-        
-        // Add recent posts if requested
-        if (maxPosts > 0 && user.edge_owner_to_timeline_media?.edges) {
-            result.recentPosts = user.edge_owner_to_timeline_media.edges
-                .slice(0, maxPosts)
-                .map(edge => ({
-                    id: edge.node.id,
-                    shortcode: edge.node.shortcode,
-                    url: `https://www.instagram.com/p/${edge.node.shortcode}/`,
-                    caption: edge.node.edge_media_to_caption?.edges?.[0]?.node?.text || '',
-                    likesCount: edge.node.edge_liked_by?.count || 0,
-                    commentsCount: edge.node.edge_media_to_comment?.count || 0,
-                    timestamp: new Date(edge.node.taken_at_timestamp * 1000).toISOString(),
-                    mediaType: edge.node.__typename,
-                    displayUrl: edge.node.display_url,
-                }));
-        }
-        
-        await Actor.pushData(result);
-        log.info(`Profile data extracted for ${username}`);
-        
-    } catch (error) {
-        log.error(`Error scraping profile ${username}: ${error.message}`);
-        await Actor.pushData({
-            type: 'error',
-            username,
-            error: error.message,
-            scrapedAt: new Date().toISOString(),
-        });
-    }
-});
-
-// Posts scraping handler
-router.addHandler('posts', async ({ page, request, log }) => {
-    const { username, maxPosts, includeComments, includeMedia } = request.userData;
-    
-    try {
-        await page.waitForSelector('main', { timeout: 30000 });
-        
-        // Scroll to load more posts
-        let loadedPosts = 0;
-        const posts = [];
-        
-        while (loadedPosts < maxPosts) {
-            // Extract posts from current view
-            const newPosts = await page.evaluate(() => {
-                const articles = Array.from(document.querySelectorAll('article'));
-                return articles.map(article => {
-                    const timeElement = article.querySelector('time');
-                    const linkElement = article.querySelector('a[href*="/p/"]');
-                    const imgElement = article.querySelector('img');
-                    const likesElement = article.querySelector('[aria-label*="like"]');
-                    
-                    return {
-                        url: linkElement ? `https://www.instagram.com${linkElement.getAttribute('href')}` : null,
-                        timestamp: timeElement ? timeElement.getAttribute('datetime') : null,
-                        imageUrl: imgElement ? imgElement.src : null,
-                        altText: imgElement ? imgElement.alt : null,
-                        likes: likesElement ? likesElement.textContent : null,
-                    };
-                }).filter(post => post.url);
-            });
-            
-            // Add new posts to collection
-            for (const post of newPosts) {
-                if (!posts.find(p => p.url === post.url)) {
-                    posts.push({
-                        ...post,
-                        type: 'post',
-                        username,
-                        scrapedAt: new Date().toISOString(),
-                    });
-                    loadedPosts++;
-                    
-                    if (loadedPosts >= maxPosts) break;
-                }
-            }
-            
-            // Scroll down to load more
-            if (loadedPosts < maxPosts) {
-                await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-                await page.waitForTimeout(2000);
-            }
-        }
-        
-        // Push posts data
-        for (const post of posts) {
-            await Actor.pushData(post);
-        }
-        
-        log.info(`Extracted ${posts.length} posts for ${username}`);
-        
-    } catch (error) {
-        log.error(`Error scraping posts for ${username}: ${error.message}`);
-        await Actor.pushData({
-            type: 'error',
-            username,
-            error: error.message,
-            scrapedAt: new Date().toISOString(),
-        });
-    }
-});
-
-// Hashtag scraping handler
-router.addHandler('hashtag', async ({ page, request, log }) => {
-    const { hashtag, maxPosts, sortBy } = request.userData;
-    
-    try {
-        await page.waitForSelector('main', { timeout: 30000 });
-        
-        // Extract hashtag stats and posts
-        const hashtagData = await page.evaluate(() => {
-            const scripts = Array.from(document.querySelectorAll('script'));
-            for (const script of scripts) {
-                if (script.textContent?.includes('window._sharedData')) {
-                    const match = script.textContent.match(/window\._sharedData\s*=\s*({.+?});/);
-                    if (match) {
-                        return JSON.parse(match[1]);
-                    }
-                }
-            }
-            return null;
-        });
-        
-        if (hashtagData?.entry_data?.TagPage?.[0]?.graphql?.hashtag) {
-            const hashtagInfo = hashtagData.entry_data.TagPage[0].graphql.hashtag;
-            
-            const result = {
-                type: 'hashtag',
-                hashtag: `#${hashtag}`,
-                name: hashtagInfo.name,
-                mediaCount: hashtagInfo.edge_hashtag_to_media?.count || 0,
-                scrapedAt: new Date().toISOString(),
-                posts: [],
-            };
-            
-            // Extract recent posts
-            if (hashtagInfo.edge_hashtag_to_media?.edges) {
-                result.posts = hashtagInfo.edge_hashtag_to_media.edges
-                    .slice(0, maxPosts)
-                    .map(edge => ({
-                        id: edge.node.id,
-                        shortcode: edge.node.shortcode,
-                        url: `https://www.instagram.com/p/${edge.node.shortcode}/`,
-                        caption: edge.node.edge_media_to_caption?.edges?.[0]?.node?.text || '',
-                        likesCount: edge.node.edge_liked_by?.count || 0,
-                        commentsCount: edge.node.edge_media_to_comment?.count || 0,
-                        timestamp: new Date(edge.node.taken_at_timestamp * 1000).toISOString(),
-                        displayUrl: edge.node.display_url,
-                        owner: edge.node.owner?.username,
-                    }));
-            }
-            
-            await Actor.pushData(result);
-            log.info(`Hashtag data extracted for #${hashtag} with ${result.posts.length} posts`);
-        }
-        
-    } catch (error) {
-        log.error(`Error scraping hashtag #${hashtag}: ${error.message}`);
-        await Actor.pushData({
-            type: 'error',
-            hashtag: `#${hashtag}`,
-            error: error.message,
-            scrapedAt: new Date().toISOString(),
-        });
-    }
-});
-
-// Quick check handler (minimal data extraction)
-router.addHandler('quickCheck', async ({ page, request, log }) => {
-    const { username } = request.userData;
-    
-    try {
-        await page.waitForSelector('main', { timeout: 30000 });
-        
-        const quickData = await page.evaluate(() => {
-            // Extract basic visible data without complex parsing
-            const followersText = document.querySelector('[href*="/followers/"]')?.textContent;
-            const followingText = document.querySelector('[href*="/following/"]')?.textContent;
-            const postsText = document.querySelector('main')?.textContent;
-            
-            return {
-                followersVisible: followersText || '',
-                followingVisible: followingText || '',
-                hasContent: !!postsText,
-                isLoaded: true,
-            };
-        });
-        
-        const result = {
-            type: 'quickCheck',
-            username,
-            ...quickData,
-            scrapedAt: new Date().toISOString(),
-        };
-        
-        await Actor.pushData(result);
-        log.info(`Quick check completed for ${username}`);
-        
-    } catch (error) {
-        log.error(`Error in quick check for ${username}: ${error.message}`);
-        await Actor.pushData({
-            type: 'error',
-            username,
-            error: error.message,
-            scrapedAt: new Date().toISOString(),
-        });
-    }
-});
-
-// Default handler for unmatched routes
-router.addDefaultHandler(async ({ page, request, log }) => {
-    const { scrapeType } = request.userData;
-    
-    try {
-        await page.waitForSelector('body', { timeout: 30000 });
-        
-        const result = {
-            type: scrapeType,
-            url: request.url,
-            status: 'completed',
-            message: `Handler for ${scrapeType} executed successfully`,
-            scrapedAt: new Date().toISOString(),
-        };
-        
-        await Actor.pushData(result);
-        log.info(`Default handler executed for ${scrapeType}`);
-        
-    } catch (error) {
-        log.error(`Error in default handler: ${error.message}`);
-        await Actor.pushData({
-            type: 'error',
-            scrapeType,
-            url: request.url,
-            error: error.message,
-            scrapedAt: new Date().toISOString(),
-        });
-    }
-});
+import { PlaywrightCrawler, Dataset } from 'crawlee';
 
 // Initialize the Actor
 await Actor.init();
@@ -304,27 +13,30 @@ if (!input.scrapeType) {
     throw new Error('Scrape type is required. Please select a scraping mode.');
 }
 
-// Initialize data stores
+console.log('Instagram Scraper started with configuration:', {
+    scrapeType: input.scrapeType,
+    maxItems: input.maxItems || 1000
+});
+
+// Initialize proxy configuration
 const proxyConfiguration = await Actor.createProxyConfiguration({
     groups: ['RESIDENTIAL'],
     countryCode: 'US',
 });
 
-// Initialize request queue
-const requestQueue = await RequestQueue.open();
+// Initialize dataset
+const dataset = await Dataset.open();
 
 // Setup the crawler with proper configuration
 const crawler = new PlaywrightCrawler({
     proxyConfiguration,
-    requestQueue,
-    requestHandler: router,
     maxRequestsPerCrawl: input.maxItems || 1000,
     maxRequestRetries: 3,
-    requestHandlerTimeoutSecs: 60,
+    requestHandlerTimeoutSecs: 120,
     sessionPoolOptions: {
-        maxPoolSize: 100,
+        maxPoolSize: 50,
         sessionOptions: {
-            maxUsageCount: 50,
+            maxUsageCount: 30,
         },
     },
     launchContext: {
@@ -338,145 +50,427 @@ const crawler = new PlaywrightCrawler({
                 '--no-first-run',
                 '--no-zygote',
                 '--disable-gpu',
+                '--disable-web-security',
+                '--disable-features=VizDisplayCompositor'
             ],
         },
     },
-    failedRequestHandler: async ({ request, error }) => {
-        await Actor.pushData({
-            error: `Request failed: ${error.message}`,
+    
+    requestHandler: async ({ page, request, log }) => {
+        const { scrapeType } = request.userData;
+        
+        try {
+            await page.setViewportSize({ width: 1920, height: 1080 });
+            await page.goto(request.url, { waitUntil: 'networkidle', timeout: 60000 });
+            
+            // Wait for main content
+            await page.waitForSelector('main', { timeout: 30000 });
+            
+            if (scrapeType === 'profile') {
+                await handleProfileScraping(page, request, log);
+            } else if (scrapeType === 'posts') {
+                await handlePostsScraping(page, request, log);
+            } else if (scrapeType === 'hashtag') {
+                await handleHashtagScraping(page, request, log);
+            } else if (scrapeType === 'reels') {
+                await handleReelsScraping(page, request, log);
+            } else if (scrapeType === 'comments') {
+                await handleCommentsScraping(page, request, log);
+            } else if (scrapeType === 'followers') {
+                await handleFollowersScraping(page, request, log);
+            } else if (scrapeType === 'mentions') {
+                await handleMentionsScraping(page, request, log);
+            } else if (scrapeType === 'quickCheck') {
+                await handleQuickCheck(page, request, log);
+            } else if (scrapeType === 'hashtagStats') {
+                await handleHashtagStats(page, request, log);
+            }
+            
+        } catch (error) {
+            log.error(`Error processing ${request.url}: ${error.message}`);
+            await dataset.pushData({
+                type: 'error',
+                url: request.url,
+                scrapeType: request.userData.scrapeType,
+                error: error.message,
+                timestamp: new Date().toISOString(),
+            });
+        }
+    },
+    
+    failedRequestHandler: async ({ request, error, log }) => {
+        log.error(`Request failed: ${error.message}`);
+        await dataset.pushData({
+            type: 'failed_request',
             url: request.url,
-            userData: request.userData,
+            error: error.message,
+            timestamp: new Date().toISOString(),
         });
     },
 });
 
+// Profile scraping handler
+async function handleProfileScraping(page, request, log) {
+    const { username, maxPosts } = request.userData;
+    
+    try {
+        // Extract profile data using Instagram's public API endpoints
+        const profileData = await page.evaluate(() => {
+            const scripts = document.querySelectorAll('script[type="application/json"]');
+            for (const script of scripts) {
+                try {
+                    const data = JSON.parse(script.textContent);
+                    if (data?.require) {
+                        // Look for user data in the complex structure
+                        const stringified = JSON.stringify(data);
+                        if (stringified.includes('edge_followed_by')) {
+                            return data;
+                        }
+                    }
+                } catch (e) {
+                    continue;
+                }
+            }
+            return null;
+        });
+        
+        if (profileData) {
+            // Extract user information from the complex data structure
+            const userMatch = JSON.stringify(profileData).match(/"username":"([^"]+)".*?"edge_followed_by":{"count":(\d+)}.*?"edge_follow":{"count":(\d+)}.*?"full_name":"([^"]*)".*?"biography":"([^"]*)".*?"profile_pic_url":"([^"]+)"/);
+            
+            if (userMatch) {
+                const result = {
+                    type: 'profile',
+                    username: userMatch[1],
+                    fullName: userMatch[4],
+                    biography: userMatch[5],
+                    followersCount: parseInt(userMatch[2]),
+                    followingCount: parseInt(userMatch[3]),
+                    profilePicUrl: userMatch[6],
+                    timestamp: new Date().toISOString(),
+                    url: request.url
+                };
+                
+                await dataset.pushData(result);
+                log.info(`Profile data extracted for ${username}`);
+                return;
+            }
+        }
+        
+        // Fallback: Extract visible data
+        const fallbackData = await page.evaluate(() => {
+            const profileName = document.querySelector('h2')?.textContent?.trim();
+            const bio = document.querySelector('div[data-testid="user-bio"]')?.textContent?.trim();
+            const followersText = Array.from(document.querySelectorAll('a')).find(a => a.href?.includes('/followers/'))?.textContent;
+            const followingText = Array.from(document.querySelectorAll('a')).find(a => a.href?.includes('/following/'))?.textContent;
+            
+            return {
+                profileName,
+                bio,
+                followersText,
+                followingText,
+                isLoaded: true
+            };
+        });
+        
+        const result = {
+            type: 'profile',
+            username,
+            fullName: fallbackData.profileName || '',
+            biography: fallbackData.bio || '',
+            followersText: fallbackData.followersText || '',
+            followingText: fallbackData.followingText || '',
+            timestamp: new Date().toISOString(),
+            url: request.url
+        };
+        
+        await dataset.pushData(result);
+        log.info(`Fallback profile data extracted for ${username}`);
+        
+    } catch (error) {
+        log.error(`Error in profile scraping: ${error.message}`);
+        throw error;
+    }
+}
+
+// Posts scraping handler
+async function handlePostsScraping(page, request, log) {
+    const { username, maxPosts } = request.userData;
+    
+    try {
+        const posts = [];
+        let scrollAttempts = 0;
+        const maxScrolls = Math.ceil(maxPosts / 12); // Instagram typically shows 12 posts per load
+        
+        while (posts.length < maxPosts && scrollAttempts < maxScrolls) {
+            // Extract posts from current view
+            const newPosts = await page.evaluate(() => {
+                const postLinks = Array.from(document.querySelectorAll('a[href*="/p/"]'));
+                return postLinks.map(link => {
+                    const img = link.querySelector('img');
+                    const href = link.getAttribute('href');
+                    
+                    return {
+                        url: `https://www.instagram.com${href}`,
+                        shortcode: href?.split('/p/')?.[1]?.split('/')?.[0],
+                        imageUrl: img?.src,
+                        altText: img?.alt
+                    };
+                }).filter(post => post.url && post.shortcode);
+            });
+            
+            // Add unique posts
+            for (const post of newPosts) {
+                if (!posts.find(p => p.shortcode === post.shortcode) && posts.length < maxPosts) {
+                    posts.push({
+                        type: 'post',
+                        username,
+                        ...post,
+                        timestamp: new Date().toISOString()
+                    });
+                }
+            }
+            
+            // Scroll to load more posts
+            if (posts.length < maxPosts) {
+                await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+                await page.waitForTimeout(2000);
+                scrollAttempts++;
+            }
+        }
+        
+        // Push all posts to dataset
+        for (const post of posts) {
+            await dataset.pushData(post);
+        }
+        
+        log.info(`Extracted ${posts.length} posts for ${username}`);
+        
+    } catch (error) {
+        log.error(`Error in posts scraping: ${error.message}`);
+        throw error;
+    }
+}
+
+// Quick check handler
+async function handleQuickCheck(page, request, log) {
+    const { username } = request.userData;
+    
+    try {
+        const quickData = await page.evaluate(() => {
+            const title = document.title;
+            const hasContent = !!document.querySelector('main');
+            const followersElement = document.querySelector('a[href*="/followers/"]');
+            const followingElement = document.querySelector('a[href*="/following/"]');
+            const postsCount = document.querySelectorAll('a[href*="/p/"]').length;
+            
+            return {
+                title,
+                hasContent,
+                followersText: followersElement?.textContent || '',
+                followingText: followingElement?.textContent || '',
+                visiblePosts: postsCount,
+                isAccessible: !title.includes('not found') && !title.includes('error')
+            };
+        });
+        
+        const result = {
+            type: 'quickCheck',
+            username,
+            ...quickData,
+            timestamp: new Date().toISOString(),
+            url: request.url
+        };
+        
+        await dataset.pushData(result);
+        log.info(`Quick check completed for ${username}`);
+        
+    } catch (error) {
+        log.error(`Error in quick check: ${error.message}`);
+        throw error;
+    }
+}
+
+// Hashtag scraping handler
+async function handleHashtagScraping(page, request, log) {
+    const { hashtag, maxPosts } = request.userData;
+    
+    try {
+        await page.waitForTimeout(3000);
+        
+        const hashtagData = await page.evaluate(() => {
+            const posts = Array.from(document.querySelectorAll('a[href*="/p/"]')).map(link => {
+                const img = link.querySelector('img');
+                const href = link.getAttribute('href');
+                
+                return {
+                    url: `https://www.instagram.com${href}`,
+                    shortcode: href?.split('/p/')?.[1]?.split('/')?.[0],
+                    imageUrl: img?.src,
+                    altText: img?.alt
+                };
+            }).filter(post => post.url);
+            
+            return {
+                postsFound: posts.length,
+                posts: posts.slice(0, 50) // Limit initial extraction
+            };
+        });
+        
+        const result = {
+            type: 'hashtag',
+            hashtag: `#${hashtag}`,
+            postsCount: hashtagData.postsFound,
+            posts: hashtagData.posts.map(post => ({
+                ...post,
+                hashtag: `#${hashtag}`,
+                timestamp: new Date().toISOString()
+            })),
+            timestamp: new Date().toISOString(),
+            url: request.url
+        };
+        
+        await dataset.pushData(result);
+        log.info(`Hashtag data extracted for #${hashtag} with ${hashtagData.posts.length} posts`);
+        
+    } catch (error) {
+        log.error(`Error in hashtag scraping: ${error.message}`);
+        throw error;
+    }
+}
+
+// Placeholder handlers for other scrape types
+async function handleReelsScraping(page, request, log) {
+    const { username } = request.userData;
+    log.info(`Reels scraping for ${username} - feature in development`);
+    await dataset.pushData({
+        type: 'reels',
+        username,
+        message: 'Reels scraping in development',
+        timestamp: new Date().toISOString()
+    });
+}
+
+async function handleCommentsScraping(page, request, log) {
+    log.info(`Comments scraping - feature in development`);
+    await dataset.pushData({
+        type: 'comments',
+        message: 'Comments scraping in development',
+        timestamp: new Date().toISOString()
+    });
+}
+
+async function handleFollowersScraping(page, request, log) {
+    const { username } = request.userData;
+    log.info(`Followers scraping for ${username} - feature in development`);
+    await dataset.pushData({
+        type: 'followers',
+        username,
+        message: 'Followers scraping in development',
+        timestamp: new Date().toISOString()
+    });
+}
+
+async function handleMentionsScraping(page, request, log) {
+    log.info(`Mentions scraping - feature in development`);
+    await dataset.pushData({
+        type: 'mentions',
+        message: 'Mentions scraping in development',
+        timestamp: new Date().toISOString()
+    });
+}
+
+async function handleHashtagStats(page, request, log) {
+    const { hashtag } = request.userData;
+    log.info(`Hashtag stats for ${hashtag} - feature in development`);
+    await dataset.pushData({
+        type: 'hashtagStats',
+        hashtag,
+        message: 'Hashtag stats in development',
+        timestamp: new Date().toISOString()
+    });
+}
+
 // Generate requests based on scrape type
 const generateRequests = async () => {
     const { scrapeType } = input;
+    const requests = [];
     
     switch (scrapeType) {
-        case 'profile': {
+        case 'profile':
+        case 'posts':
+        case 'reels':
+        case 'followers':
+        case 'quickCheck':
             if (!input.usernames?.length) {
-                throw new Error('Usernames are required for profile scraping');
+                throw new Error('Usernames are required for this scraping mode');
             }
             
             for (const username of input.usernames) {
-                await requestQueue.addRequest({
-                    url: `https://www.instagram.com/${username}/`,
-                    userData: {
-                        scrapeType: 'profile',
-                        username: username.replace('@', ''),
-                        maxPosts: input.maxPosts || 50,
-                        includeStories: input.includeStories || false,
-                        includeHighlights: input.includeHighlights || false,
-                    },
-                });
+                const cleanUsername = username.replace('@', '').trim();
+                if (cleanUsername) {
+                    requests.push({
+                        url: `https://www.instagram.com/${cleanUsername}/`,
+                        userData: {
+                            scrapeType,
+                            username: cleanUsername,
+                            maxPosts: input.maxPosts || 50,
+                            maxReels: input.maxReels || 50,
+                            maxFollowers: input.maxFollowers || 1000,
+                            includeComments: input.includeComments || false,
+                            includeMedia: input.includeMedia || true,
+                        },
+                    });
+                }
             }
             break;
-        }
-        
-        case 'posts': {
-            if (!input.usernames?.length) {
-                throw new Error('Usernames are required for post scraping');
-            }
             
-            for (const username of input.usernames) {
-                await requestQueue.addRequest({
-                    url: `https://www.instagram.com/${username}/`,
-                    userData: {
-                        scrapeType: 'posts',
-                        username: username.replace('@', ''),
-                        maxPosts: input.maxPosts || 50,
-                        includeComments: input.includeComments || false,
-                        includeMedia: input.includeMedia || true,
-                    },
-                });
-            }
-            break;
-        }
-        
-        case 'hashtag': {
+        case 'hashtag':
+        case 'hashtagStats':
             if (!input.hashtags?.length) {
-                throw new Error('Hashtags are required for hashtag scraping');
+                throw new Error('Hashtags are required for this scraping mode');
             }
             
             for (const hashtag of input.hashtags) {
-                await requestQueue.addRequest({
-                    url: `https://www.instagram.com/explore/tags/${hashtag.replace('#', '')}/`,
-                    userData: {
-                        scrapeType: 'hashtag',
-                        hashtag: hashtag.replace('#', ''),
-                        maxPosts: input.maxPosts || 100,
-                        sortBy: input.sortBy || 'recent',
-                    },
-                });
+                const cleanHashtag = hashtag.replace('#', '').trim();
+                if (cleanHashtag) {
+                    requests.push({
+                        url: `https://www.instagram.com/explore/tags/${cleanHashtag}/`,
+                        userData: {
+                            scrapeType,
+                            hashtag: cleanHashtag,
+                            maxPosts: input.maxPosts || 100,
+                        },
+                    });
+                }
             }
             break;
-        }
-        
-        case 'reels': {
-            if (!input.usernames?.length) {
-                throw new Error('Usernames are required for reels scraping');
-            }
             
-            for (const username of input.usernames) {
-                await requestQueue.addRequest({
-                    url: `https://www.instagram.com/${username}/reels/`,
-                    userData: {
-                        scrapeType: 'reels',
-                        username: username.replace('@', ''),
-                        maxReels: input.maxReels || 50,
-                        includeComments: input.includeComments || false,
-                    },
-                });
-            }
-            break;
-        }
-        
-        case 'comments': {
+        case 'comments':
             if (!input.postUrls?.length) {
                 throw new Error('Post URLs are required for comment scraping');
             }
             
             for (const postUrl of input.postUrls) {
-                await requestQueue.addRequest({
-                    url: postUrl,
-                    userData: {
-                        scrapeType: 'comments',
-                        maxComments: input.maxComments || 100,
-                        includeReplies: input.includeReplies || false,
-                    },
-                });
+                if (postUrl.includes('instagram.com/p/')) {
+                    requests.push({
+                        url: postUrl,
+                        userData: {
+                            scrapeType: 'comments',
+                            maxComments: input.maxComments || 100,
+                        },
+                    });
+                }
             }
             break;
-        }
-        
-        case 'followers': {
-            if (!input.usernames?.length) {
-                throw new Error('Usernames are required for follower scraping');
-            }
             
-            for (const username of input.usernames) {
-                await requestQueue.addRequest({
-                    url: `https://www.instagram.com/${username}/followers/`,
-                    userData: {
-                        scrapeType: 'followers',
-                        username: username.replace('@', ''),
-                        maxFollowers: input.maxFollowers || 1000,
-                        includeFollowerDetails: input.includeFollowerDetails || false,
-                    },
-                });
-            }
-            break;
-        }
-        
-        case 'mentions': {
+        case 'mentions':
             if (!input.searchTerms?.length) {
                 throw new Error('Search terms are required for mention scraping');
             }
             
             for (const term of input.searchTerms) {
-                await requestQueue.addRequest({
+                requests.push({
                     url: `https://www.instagram.com/web/search/topsearch/?query=${encodeURIComponent(term)}`,
                     userData: {
                         scrapeType: 'mentions',
@@ -486,59 +480,40 @@ const generateRequests = async () => {
                 });
             }
             break;
-        }
-        
-        case 'quickCheck': {
-            if (!input.usernames?.length) {
-                throw new Error('Usernames are required for quick check');
-            }
             
-            for (const username of input.usernames) {
-                await requestQueue.addRequest({
-                    url: `https://www.instagram.com/${username}/`,
-                    userData: {
-                        scrapeType: 'quickCheck',
-                        username: username.replace('@', ''),
-                    },
-                });
-            }
-            break;
-        }
-        
-        case 'hashtagStats': {
-            if (!input.hashtags?.length) {
-                throw new Error('Hashtags are required for hashtag stats');
-            }
-            
-            for (const hashtag of input.hashtags) {
-                await requestQueue.addRequest({
-                    url: `https://www.instagram.com/explore/tags/${hashtag.replace('#', '')}/`,
-                    userData: {
-                        scrapeType: 'hashtagStats',
-                        hashtag: hashtag.replace('#', ''),
-                    },
-                });
-            }
-            break;
-        }
-        
         default:
             throw new Error(`Unknown scrape type: ${scrapeType}`);
     }
+    
+    return requests;
 };
 
-// Generate and enqueue requests
-await generateRequests();
+// Generate and add requests to crawler
+const requests = await generateRequests();
+console.log(`Generated ${requests.length} requests for ${input.scrapeType} scraping`);
+
+// Add requests to crawler
+await crawler.addRequests(requests);
 
 // Log the start of the crawl
 console.log(`Starting ${input.scrapeType} scraping...`);
 await Actor.setValue('SCRAPE_TYPE', input.scrapeType);
+await Actor.setValue('TOTAL_REQUESTS', requests.length);
 
 // Run the crawler
 await crawler.run();
 
-// Log completion
-console.log(`${input.scrapeType} scraping completed successfully!`);
+// Get final stats
+const stats = await dataset.getInfo();
+console.log(`Scraping completed! Extracted ${stats.itemCount} items`);
+
+// Save final summary
+await Actor.setValue('FINAL_STATS', {
+    scrapeType: input.scrapeType,
+    totalRequests: requests.length,
+    itemsExtracted: stats.itemCount,
+    completedAt: new Date().toISOString()
+});
 
 // Exit the Actor
 await Actor.exit();
