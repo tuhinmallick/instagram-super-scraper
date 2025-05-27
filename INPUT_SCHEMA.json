@@ -37,7 +37,6 @@
       "type": "string",
       "description": "Instagram profile URL or username (e.g., 'username' or 'https://instagram.com/username')",
       "editor": "textfield",
-      "prefill": "username",
       "example": "cristiano"
     },
     "hashtag": {
@@ -45,7 +44,6 @@
       "type": "string", 
       "description": "Hashtag to scrape (without the # symbol)",
       "editor": "textfield",
-      "prefill": "travel",
       "example": "travel"
     },
     "postUrl": {
@@ -71,8 +69,7 @@
       "description": "Maximum number of items to scrape",
       "minimum": 1,
       "maximum": 1000,
-      "default": 20,
-      "unit": "items"
+      "default": 20
     },
     "proxyConfiguration": {
       "title": "Proxy Configuration",
@@ -84,17 +81,54 @@
     }
   },
   "required": ["scraperType"],
-  "conditionalFields": {
-    "scraperType": {
-      "profile": ["profileUrl"],
-      "reels": ["profileUrl", "limit"],
-      "hashtag": ["hashtag", "limit"], 
-      "post": ["postUrl"],
-      "comments": ["postUrl", "limit"],
-      "mentions": ["profileUrl", "limit"],
-      "quick-posts": ["profileUrl", "limit"],
-      "followers-count": ["usernames"],
-      "hashtag-stats": ["hashtag"]
+  "allOf": [
+    {
+      "if": {
+        "properties": { 
+          "scraperType": { 
+            "enum": ["profile", "reels", "mentions", "quick-posts"] 
+          } 
+        }
+      },
+      "then": {
+        "required": ["profileUrl"]
+      }
+    },
+    {
+      "if": {
+        "properties": { 
+          "scraperType": { 
+            "enum": ["hashtag", "hashtag-stats"] 
+          } 
+        }
+      },
+      "then": {
+        "required": ["hashtag"]
+      }
+    },
+    {
+      "if": {
+        "properties": { 
+          "scraperType": { 
+            "enum": ["post", "comments"] 
+          } 
+        }
+      },
+      "then": {
+        "required": ["postUrl"]
+      }
+    },
+    {
+      "if": {
+        "properties": { 
+          "scraperType": { 
+            "const": "followers-count" 
+          } 
+        }
+      },
+      "then": {
+        "required": ["usernames"]
+      }
     }
-  }
+  ]
 }
