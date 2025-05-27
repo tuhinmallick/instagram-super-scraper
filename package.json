@@ -1,0 +1,29 @@
+{
+  "name": "instagram-multi-scraper",
+  "version": "1.0.0",
+  "description": "Comprehensive Instagram scraper supporting profiles, posts, reels, hashtags, comments, and more",
+  "main": "main.js",
+  "scripts": {
+    "start": "node main.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "instagram",
+    "scraper", 
+    "social-media",
+    "apify",
+    "crawler",
+    "data-extraction"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {
+    "apify": "^3.1.10",
+    "@crawlee/playwright": "^3.5.8",
+    "playwright": "^1.40.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Sampath2CSE/instagram-super-scraper"
+  }
+}

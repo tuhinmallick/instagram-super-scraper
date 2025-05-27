@@ -1,0 +1,100 @@
+{
+  "title": "Instagram Multi-Scraper Input",
+  "description": "Configure the Instagram scraper based on your needs",
+  "type": "object",
+  "schemaVersion": 1,
+  "properties": {
+    "scraperType": {
+      "title": "Scraper Type",
+      "type": "string",
+      "description": "Choose the type of Instagram data to scrape",
+      "enum": [
+        "profile",
+        "reels", 
+        "hashtag",
+        "post",
+        "comments",
+        "mentions",
+        "quick-posts",
+        "followers-count",
+        "hashtag-stats"
+      ],
+      "enumTitles": [
+        "👤 Instagram Profile Scraper",
+        "🎞️ Instagram Reel Scraper", 
+        "#️⃣ Instagram Hashtag Scraper",
+        "📷 Instagram Post Scraper",
+        "💬 Instagram Comments Scraper",
+        "🏷️ Instagram Mentions Scraper",
+        "✅ Quick Instagram Posts Checker",
+        "👥 Instagram Followers Count Scraper",
+        "📊 Instagram Hashtag Stats"
+      ],
+      "default": "profile"
+    },
+    "profileUrl": {
+      "title": "Profile URL or Username",
+      "type": "string",
+      "description": "Instagram profile URL or username (e.g., 'username' or 'https://instagram.com/username')",
+      "editor": "textfield",
+      "prefill": "username",
+      "example": "cristiano"
+    },
+    "hashtag": {
+      "title": "Hashtag",
+      "type": "string", 
+      "description": "Hashtag to scrape (without the # symbol)",
+      "editor": "textfield",
+      "prefill": "travel",
+      "example": "travel"
+    },
+    "postUrl": {
+      "title": "Post URL",
+      "type": "string",
+      "description": "Full Instagram post or reel URL",
+      "editor": "textfield",
+      "example": "https://www.instagram.com/p/ABC123/"
+    },
+    "usernames": {
+      "title": "Usernames List",
+      "type": "array",
+      "description": "List of usernames for bulk followers count check",
+      "editor": "stringList",
+      "items": {
+        "type": "string"
+      },
+      "example": ["username1", "username2", "username3"]
+    },
+    "limit": {
+      "title": "Results Limit",
+      "type": "integer",
+      "description": "Maximum number of items to scrape",
+      "minimum": 1,
+      "maximum": 1000,
+      "default": 20,
+      "unit": "items"
+    },
+    "proxyConfiguration": {
+      "title": "Proxy Configuration",
+      "type": "object",
+      "description": "Proxy settings for avoiding rate limits",
+      "prefill": { "useApifyProxy": true },
+      "default": { "useApifyProxy": true },
+      "editor": "proxy"
+    }
+  },
+  "required": ["scraperType"],
+  "conditionalFields": {
+    "scraperType": {
+      "profile": ["profileUrl"],
+      "reels": ["profileUrl", "limit"],
+      "hashtag": ["hashtag", "limit"], 
+      "post": ["postUrl"],
+      "comments": ["postUrl", "limit"],
+      "mentions": ["profileUrl", "limit"],
+      "quick-posts": ["profileUrl", "limit"],
+      "followers-count": ["usernames"],
+      "hashtag-stats": ["hashtag"]
+    }
+  }
+}
