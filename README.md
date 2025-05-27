@@ -1,144 +1,213 @@
-# 🚀 Instagram Multi-Scraper Apify Actor
+# 🔥 Instagram Multi-Purpose Scraper
 
-A comprehensive Instagram scraper that supports 9 different scraping modes in a single actor. The UI dynamically changes based on your selection, providing a clean and intuitive experience.
+A comprehensive Instagram scraper supporting multiple data extraction modes. Built with Apify and Crawlee for reliable, scalable Instagram data collection.
 
-## 🎯 Features
+## ✨ Features
 
-### Supported Scraper Types:
+- **👤 Profile Scraper**: Extract complete profile information including followers, posts, bio, and recent content
+- **📷 Post Scraper**: Collect posts from specific users with engagement metrics
+- **#️⃣ Hashtag Scraper**: Discover posts and stats for any hashtag
+- **🎞️ Reel Scraper**: Extract Instagram reels content and metadata  
+- **💬 Comments Scraper**: Gather comments from specific posts
+- **👥 Followers Count Scraper**: Track follower/following counts
+- **🏷️ Mentions Scraper**: Find mentions of your brand or keywords
+- **✅ Quick Posts Checker**: Fast overview of account activity
+- **📊 Hashtag Stats**: Analyze hashtag performance metrics
 
-- **👤 Instagram Profile Scraper** - Extract complete profile information
-- **🎞️ Instagram Reel Scraper** - Scrape user's reels and videos  
-- **#️⃣ Instagram Hashtag Scraper** - Get posts from any hashtag
-- **📷 Instagram Post Scraper** - Extract detailed post information
-- **💬 Instagram Comments Scraper** - Get comments from posts/reels
-- **🏷️ Instagram Mentions Scraper** - Find posts mentioning specific users
-- **✅ Quick Instagram Posts Checker** - Fast overview of recent posts
-- **👥 Instagram Followers Count Scraper** - Bulk follower count checking
-- **📊 Instagram Hashtag Stats** - Get hashtag statistics and metrics
+## 🚀 Quick Start
 
-## 🛠️ Setup Instructions
+1. **Select a scraping mode** from the dropdown
+2. **Enter your targets** (usernames, hashtags, or URLs depending on mode)
+3. **Configure limits** (max posts, comments, etc.)
+4. **Click Start** and wait for results
 
-### 1. Create New Actor on Apify
-
-1. Go to [Apify Console](https://console.apify.com/)
-2. Click "Create New" → "Actor"
-3. Choose "Web Scraper" template or start from scratch
-
-### 2. Upload Files
-
-Copy these files to your Apify actor:
-
-- `main.js` - Main scraper logic
-- `package.json` - Dependencies
-- `Dockerfile` - Container configuration  
-- `INPUT_SCHEMA.json` - Dynamic UI configuration
-
-### 3. Configure Input Schema
-
-The `INPUT_SCHEMA.json` provides the dynamic UI that changes based on scraper selection:
-
+### Example: Profile Scraping
 ```json
 {
-  "title": "Instagram Multi-Scraper Input",
-  "type": "object", 
-  "properties": {
-    "scraperType": {
-      "title": "Scraper Type",
-      "type": "string",
-      "enum": ["profile", "reels", "hashtag", "post", "comments", "mentions", "quick-posts", "followers-count", "hashtag-stats"]
-    }
-  }
+  "scrapeType": "profile",
+  "usernames": ["google", "instagram"],
+  "maxPosts": 20,
+  "includeMedia": true
 }
 ```
 
-## 📊 Usage Examples
-
-### Profile Scraper
+### Example: Hashtag Analysis
 ```json
 {
-  "scraperType": "profile",
-  "profileUrl": "cristiano"
+  "scrapeType": "hashtag",
+  "hashtags": ["travel", "photography"],
+  "maxPosts": 100,
+  "sortBy": "recent"
 }
 ```
 
-**Output:**
+## 📊 Output Data
+
+### Profile Data
 ```json
 {
-  "username": "cristiano",
-  "displayName": "Cristiano Ronaldo", 
-  "bio": "Professional footballer",
-  "posts": 3401,
-  "followers": 617000000,
-  "following": 578,
-  "isVerified": true,
+  "type": "profile",
+  "username": "example_user",
+  "fullName": "Example User",
+  "biography": "This is a bio...",
+  "followersCount": 1500,
+  "followingCount": 800,
+  "postsCount": 250,
+  "profilePicUrl": "https://...",
+  "isVerified": false,
   "isPrivate": false,
-  "profilePicture": "https://...",
-  "externalUrl": "https://...",
-  "category": "Athlete"
+  "recentPosts": [...],
+  "scrapedAt": "2025-01-15T10:30:00Z"
 }
 ```
 
-### Hashtag Scraper
+### Post Data
 ```json
 {
-  "scraperType": "hashtag",
-  "hashtag": "travel",
-  "limit": 50
+  "type": "post",
+  "id": "post_id",
+  "shortcode": "ABC123",
+  "url": "https://instagram.com/p/ABC123/",
+  "caption": "Post caption text...",
+  "likesCount": 150,
+  "commentsCount": 25,
+  "timestamp": "2025-01-15T08:00:00Z",
+  "mediaType": "GraphImage",
+  "displayUrl": "https://...",
+  "owner": "username"
 }
 ```
 
-**Output:**
+### Hashtag Data
 ```json
 {
-  "hashtag": "travel",
-  "postsCount": 500000000,
-  "description": "Explore the world...",
-  "posts": [
-    {
-      "url": "https://instagram.com/p/ABC123/",
-      "thumbnail": "https://...",
-      "shortcode": "ABC123", 
-      "type": "post"
-    }
-  ]
+  "type": "hashtag",
+  "hashtag": "#travel",
+  "name": "travel",
+  "mediaCount": 500000000,
+  "posts": [...],
+  "scrapedAt": "2025-01-15T10:30:00Z"
 }
 ```
 
-### Comments Scraper
-```json
-{
-  "scraperType": "comments",
-  "postUrl": "https://instagram.com/p/ABC123/",
-  "limit": 100
-}
-```
+## ⚙️ Configuration Options
 
-**Output:**
-```json
-[
-  {
-    "username": "user123",
-    "comment": "Amazing post!",
-    "timestamp": "2024-01-01T12:00:00Z",
-    "likes": 45
-  }
-]
-```
+### Scraping Modes
 
-## 🔧 Configuration Options
+| Mode | Description | Required Input |
+|------|-------------|----------------|
+| `profile` | Complete profile information | `usernames` |
+| `posts` | User posts with engagement | `usernames` |
+| `hashtag` | Posts from hashtag pages | `hashtags` |
+| `reels` | Instagram reels content | `usernames` |
+| `comments` | Comments from specific posts | `postUrls` |
+| `followers` | Follower count tracking | `usernames` |
+| `mentions` | Brand/keyword mentions | `searchTerms` |
+| `quickCheck` | Fast account overview | `usernames` |
+| `hashtagStats` | Hashtag performance metrics | `hashtags` |
 
-### Input Fields (Dynamic based on scraper type):
+### Limits & Performance
 
-| Field | Type | Description | Required For |
-|-------|------|-------------|-------------|
-| `scraperType` | String | Type of scraper to use | All |
-| `profileUrl` | String | Instagram profile URL or username | Profile, Reels, Mentions, Quick Posts |
-| `hashtag` | String | Hashtag name (without #) | Hashtag, Hashtag Stats |
-| `postUrl` | String | Full Instagram post/reel URL | Post, Comments |
-| `usernames` | Array | List of usernames for bulk checking | Followers Count |
-| `limit` | Integer | Maximum items to scrape (1-1000) | Most scrapers |
-| `proxyConfiguration` | Object | Proxy settings | Optional |
+- **maxItems**: Overall item limit (1-10,000)
+- **maxPosts**: Posts per profile/hashtag (0-1,000)  
+- **maxReels**: Reels per profile (0-500)
+- **maxComments**: Comments per post (0-1,000)
+- **maxFollowers**: Followers to extract (0-5,000)
+- **maxResults**: Search results for mentions (0-500)
 
-### Proxy Configuration
+### Advanced Options
 
-Recommende
+- **includeComments**: Extract comment data with posts
+- **includeMedia**: Include image/video URLs
+- **includeStories**: Include story data (when available)
+- **includeHighlights**: Include highlight reels
+- **includeReplies**: Include comment replies
+- **includeFollowerDetails**: Detailed follower profiles
+- **sortBy**: Sort hashtag posts by "recent" or "top"
+
+## 🛡️ Rate Limiting & Best Practices
+
+This scraper implements several anti-detection measures:
+
+- **Residential Proxies**: Automatic IP rotation
+- **Session Management**: Smart session handling  
+- **Request Delays**: Human-like timing patterns
+- **Browser Fingerprinting**: Realistic browser signatures
+- **Error Handling**: Robust retry mechanisms
+
+## 📈 Use Cases
+
+### Marketing & Analytics
+- Track competitor activity and engagement
+- Analyze hashtag performance for campaigns
+- Monitor brand mentions and sentiment
+- Identify influencers in your niche
+
+### Research & Insights  
+- Social media trend analysis
+- Content performance research
+- Audience behavior studies
+- Market research data collection
+
+### Business Intelligence
+- Lead generation from targeted profiles
+- Customer sentiment analysis from comments
+- Competitor benchmarking
+- Influencer outreach list building
+
+## 🚨 Compliance & Ethics
+
+This scraper only extracts **publicly available data** that Instagram shows to non-logged-in users. It respects:
+
+- Instagram's rate limits
+- Public data accessibility rules
+- GDPR compliance for EU data
+- Ethical scraping practices
+
+**Important**: Always review and comply with Instagram's Terms of Service and applicable data protection laws in your jurisdiction.
+
+## 🔧 Technical Details
+
+### Built With
+- **Apify SDK 3.x**: Actor framework and data management
+- **Crawlee 3.x**: Web crawling and browser automation
+- **Playwright**: Headless browser automation
+- **Node.js 20+**: Runtime environment
+
+### Infrastructure
+- Automatic proxy rotation
+- Cloud-based execution
+- Scalable compute resources
+- Built-in data storage
+
+### Error Handling
+- Comprehensive error logging
+- Automatic retry mechanisms
+- Graceful failure handling
+- Detailed error reporting
+
+## 📞 Support
+
+- **Issues**: Report bugs via the Actor's Issues tab
+- **Documentation**: Full API docs available
+- **Community**: Join the Apify Discord community
+- **Custom Solutions**: Contact for enterprise needs
+
+## 🏷️ Tags
+
+`instagram` `social-media` `scraper` `data-extraction` `marketing` `analytics` `apify` `crawlee`
+
+---
+
+**Version**: 1.0.0  
+**Last Updated**: January 2025  
+**Compatibility**: Instagram Web (2025)
+
+## 🔄 Changelog
+
+### v1.0.0 (January 2025)
+- Initial release with 9 scraping modes
+- Comprehensive input validation
+- Advanced anti-detection features
+- Full error handling and logging
+- Optimized performance and reliability

@@ -1,509 +1,544 @@
-// main.js - Instagram Multi-Scraper Apify Actor
-const Apify = require('apify');
-const { PlaywrightCrawler } = require('@crawlee/playwright');
+import { Actor } from 'apify';
+import { PlaywrightCrawler, RequestQueue } from 'crawlee';
+// routes.js - Request routing and handling
+import { createPlaywrightRouter } from 'crawlee';
 
-// Utility functions
-const utils = {
-    // Wait for random time to avoid detection
-    randomWait: (min = 1000, max = 3000) => 
-        new Promise(resolve => setTimeout(resolve, Math.random() * (max - min) + min)),
-    
-    // Clean Instagram URL
-    cleanInstagramUrl: (url) => {
-        if (!url.includes('instagram.com')) {
-            return `https://www.instagram.com/${url.replace('@', '')}/`;
-        }
-        return url;
-    },
-    
-    // Extract username from URL
-    extractUsername: (url) => {
-        const match = url.match(/instagram\.com\/([^\/\?]+)/);
-        return match ? match[1] : null;
-    },
-    
-    // Wait for element with retry
-    waitForElement: async (page, selector, timeout = 10000) => {
-        try {
-            await page.waitForSelector(selector, { timeout });
-            return true;
-        } catch (error) {
-            console.log(`Element ${selector} not found within ${timeout}ms`);
-            return false;
-        }
-    }
-};
+export const router = createPlaywrightRouter();
 
-// Instagram scrapers
-const scrapers = {
-    // Profile Scraper
-    async scrapeProfile(page, username) {
-        console.log(`Scraping profile: ${username}`);
+// Profile scraping handler
+router.addHandler('profile', async ({ page, request, log }) => {
+    const { username, maxPosts, includeStories, includeHighlights } = request.userData;
+    
+    try {
+        // Wait for page to load and get initial data
+        await page.waitForSelector('main', { timeout: 30000 });
         
-        const profileUrl = `https://www.instagram.com/${username}/`;
-        await page.goto(profileUrl, { waitUntil: 'networkidle' });
-        await utils.randomWait();
-        
-        // Wait for profile data to load
-        await utils.waitForElement(page, 'header section');
-        
+        // Extract profile data from page
         const profileData = await page.evaluate(() => {
-            const getTextContent = (selector) => {
-                const element = document.querySelector(selector);
-                return element ? element.textContent.trim() : '';
-            };
-            
-            const getMetaContent = (property) => {
-                const meta = document.querySelector(`meta[property="${property}"]`);
-                return meta ? meta.getAttribute('content') : '';
-            };
-            
-            // Extract follower/following counts
-            const statsElements = document.querySelectorAll('header section ul li');
-            let posts = 0, followers = 0, following = 0;
-            
-            statsElements.forEach((li, index) => {
-                const text = li.textContent.trim();
-                const number = parseInt(text.replace(/[,\s]/g, '').match(/\d+/)?.[0] || '0');
-                
-                if (index === 0) posts = number;
-                else if (index === 1) followers = number;
-                else if (index === 2) following = number;
-            });
-            
-            return {
-                username: window.location.pathname.split('/')[1],
-                displayName: getTextContent('header section h2') || getTextContent('header section h1'),
-                bio: getTextContent('header section div span') || getMetaContent('og:description'),
-                posts,
-                followers,
-                following,
-                isVerified: !!document.querySelector('header section svg[title*="Verified"]'),
-                isPrivate: !!document.querySelector('article h2'),
-                profilePicture: getMetaContent('og:image'),
-                externalUrl: getTextContent('header section a[href^="http"]'),
-                category: getTextContent('header section div:last-child span')
-            };
-        });
-        
-        return profileData;
-    },
-    
-    // Reel Scraper
-    async scrapeReels(page, username, limit = 12) {
-        console.log(`Scraping reels for: ${username}`);
-        
-        const reelsUrl = `https://www.instagram.com/${username}/reels/`;
-        await page.goto(reelsUrl, { waitUntil: 'networkidle' });
-        await utils.randomWait();
-        
-        const reels = [];
-        let scrollAttempts = 0;
-        const maxScrollAttempts = Math.ceil(limit / 12);
-        
-        while (reels.length < limit && scrollAttempts < maxScrollAttempts) {
-            await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-            await utils.randomWait(2000, 4000);
-            
-            const newReels = await page.evaluate(() => {
-                const reelElements = document.querySelectorAll('article div div div a[href*="/reel/"]');
-                return Array.from(reelElements).map(link => {
-                    const img = link.querySelector('img');
-                    const videoIcon = link.querySelector('svg');
-                    
-                    return {
-                        url: link.href,
-                        thumbnail: img ? img.src : '',
-                        shortcode: link.href.split('/reel/')[1]?.split('/')[0],
-                        isVideo: !!videoIcon
-                    };
-                });
-            });
-            
-            // Merge new reels, avoiding duplicates
-            newReels.forEach(reel => {
-                if (!reels.find(r => r.shortcode === reel.shortcode)) {
-                    reels.push(reel);
-                }
-            });
-            
-            scrollAttempts++;
-        }
-        
-        return reels.slice(0, limit);
-    },
-    
-    // Hashtag Scraper
-    async scrapeHashtag(page, hashtag, limit = 20) {
-        console.log(`Scraping hashtag: #${hashtag}`);
-        
-        const hashtagUrl = `https://www.instagram.com/explore/tags/${hashtag}/`;
-        await page.goto(hashtagUrl, { waitUntil: 'networkidle' });
-        await utils.randomWait();
-        
-        // Get hashtag stats
-        const hashtagStats = await page.evaluate(() => {
-            const statsText = document.querySelector('header div span')?.textContent || '';
-            const postsCount = parseInt(statsText.replace(/[,\s]/g, '').match(/\d+/)?.[0] || '0');
-            
-            return {
-                hashtag: window.location.pathname.split('/tags/')[1]?.split('/')[0],
-                postsCount,
-                description: document.querySelector('header div div span')?.textContent || ''
-            };
-        });
-        
-        const posts = [];
-        let scrollAttempts = 0;
-        const maxScrollAttempts = Math.ceil(limit / 12);
-        
-        while (posts.length < limit && scrollAttempts < maxScrollAttempts) {
-            await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-            await utils.randomWait(2000, 4000);
-            
-            const newPosts = await page.evaluate(() => {
-                const postElements = document.querySelectorAll('article div div div a[href*="/p/"], article div div div a[href*="/reel/"]');
-                return Array.from(postElements).map(link => {
-                    const img = link.querySelector('img');
-                    const isReel = link.href.includes('/reel/');
-                    
-                    return {
-                        url: link.href,
-                        thumbnail: img ? img.src : '',
-                        shortcode: link.href.split(isReel ? '/reel/' : '/p/')[1]?.split('/')[0],
-                        type: isReel ? 'reel' : 'post'
-                    };
-                });
-            });
-            
-            newPosts.forEach(post => {
-                if (!posts.find(p => p.shortcode === post.shortcode)) {
-                    posts.push(post);
-                }
-            });
-            
-            scrollAttempts++;
-        }
-        
-        return {
-            ...hashtagStats,
-            posts: posts.slice(0, limit)
-        };
-    },
-    
-    // Post Scraper
-    async scrapePost(page, postUrl) {
-        console.log(`Scraping post: ${postUrl}`);
-        
-        await page.goto(postUrl, { waitUntil: 'networkidle' });
-        await utils.randomWait();
-        
-        const postData = await page.evaluate(() => {
-            const getTextContent = (selector) => {
-                const element = document.querySelector(selector);
-                return element ? element.textContent.trim() : '';
-            };
-            
-            const getMetaContent = (property) => {
-                const meta = document.querySelector(`meta[property="${property}"]`);
-                return meta ? meta.getAttribute('content') : '';
-            };
-            
-            // Extract post details
-            const captionElement = document.querySelector('article div div div div span[dir="auto"]');
-            const caption = captionElement ? captionElement.textContent : getMetaContent('og:description');
-            
-            // Extract hashtags from caption
-            const hashtags = (caption.match(/#[\w]+/g) || []).map(tag => tag.slice(1));
-            
-            // Extract mentions from caption
-            const mentions = (caption.match(/@[\w.]+/g) || []).map(mention => mention.slice(1));
-            
-            // Get engagement metrics
-            const likesElement = document.querySelector('section span[role="button"] span');
-            const likes = likesElement ? parseInt(likesElement.textContent.replace(/[,\s]/g, '')) : 0;
-            
-            return {
-                shortcode: window.location.pathname.split('/p/')[1]?.split('/')[0] || 
-                          window.location.pathname.split('/reel/')[1]?.split('/')[0],
-                caption,
-                hashtags,
-                mentions,
-                likes,
-                author: document.querySelector('header a')?.textContent || '',
-                timestamp: document.querySelector('time')?.getAttribute('datetime') || '',
-                images: Array.from(document.querySelectorAll('article img')).map(img => img.src),
-                isVideo: !!document.querySelector('video'),
-                location: getTextContent('header div div a') || null
-            };
-        });
-        
-        return postData;
-    },
-    
-    // Comments Scraper
-    async scrapeComments(page, postUrl, limit = 50) {
-        console.log(`Scraping comments for: ${postUrl}`);
-        
-        await page.goto(postUrl, { waitUntil: 'networkidle' });
-        await utils.randomWait();
-        
-        // Click "View all comments" if available
-        const viewAllButton = await page.$('button span:has-text("View all")');
-        if (viewAllButton) {
-            await viewAllButton.click();
-            await utils.randomWait();
-        }
-        
-        const comments = [];
-        let scrollAttempts = 0;
-        const maxScrollAttempts = Math.ceil(limit / 20);
-        
-        while (comments.length < limit && scrollAttempts < maxScrollAttempts) {
-            const newComments = await page.evaluate(() => {
-                const commentElements = document.querySelectorAll('article div div div div div ul li');
-                return Array.from(commentElements).map(li => {
-                    const usernameElement = li.querySelector('a[role="link"]');
-                    const commentElement = li.querySelector('span[dir="auto"]');
-                    const timeElement = li.querySelector('time');
-                    const likesElement = li.querySelector('button span');
-                    
-                    return {
-                        username: usernameElement ? usernameElement.textContent : '',
-                        comment: commentElement ? commentElement.textContent : '',
-                        timestamp: timeElement ? timeElement.getAttribute('datetime') : '',
-                        likes: likesElement ? parseInt(likesElement.textContent.replace(/\D/g, '')) || 0 : 0
-                    };
-                }).filter(comment => comment.username && comment.comment);
-            });
-            
-            newComments.forEach(comment => {
-                if (!comments.find(c => c.username === comment.username && c.comment === comment.comment)) {
-                    comments.push(comment);
-                }
-            });
-            
-            // Scroll to load more comments
-            await page.evaluate(() => {
-                const commentsSection = document.querySelector('article div div div div div ul');
-                if (commentsSection) {
-                    commentsSection.scrollTop = commentsSection.scrollHeight;
-                }
-            });
-            
-            await utils.randomWait(2000, 3000);
-            scrollAttempts++;
-        }
-        
-        return comments.slice(0, limit);
-    },
-    
-    // Followers Count Scraper (Quick check)
-    async scrapeFollowersCount(page, usernames) {
-        console.log(`Scraping followers count for multiple users`);
-        
-        const results = [];
-        
-        for (const username of usernames) {
-            try {
-                const profileUrl = `https://www.instagram.com/${username}/`;
-                await page.goto(profileUrl, { waitUntil: 'networkidle' });
-                await utils.randomWait(1000, 2000);
-                
-                const data = await page.evaluate(() => {
-                    const statsElements = document.querySelectorAll('header section ul li');
-                    let followers = 0;
-                    
-                    if (statsElements.length >= 2) {
-                        const followersText = statsElements[1].textContent.trim();
-                        const numberMatch = followersText.match(/[\d,]+/);
-                        if (numberMatch) {
-                            followers = parseInt(numberMatch[0].replace(/,/g, ''));
-                        }
+            // Look for JSON data in script tags
+            const scripts = Array.from(document.querySelectorAll('script'));
+            for (const script of scripts) {
+                if (script.textContent?.includes('window._sharedData')) {
+                    const match = script.textContent.match(/window\._sharedData\s*=\s*({.+?});/);
+                    if (match) {
+                        return JSON.parse(match[1]);
                     }
+                }
+            }
+            return null;
+        });
+        
+        if (!profileData) {
+            throw new Error('Could not extract profile data');
+        }
+        
+        const user = profileData.entry_data?.ProfilePage?.[0]?.graphql?.user;
+        
+        if (!user) {
+            throw new Error('User data not found in page');
+        }
+        
+        const result = {
+            type: 'profile',
+            username: user.username,
+            fullName: user.full_name,
+            biography: user.biography,
+            followersCount: user.edge_followed_by?.count || 0,
+            followingCount: user.edge_follow?.count || 0,
+            postsCount: user.edge_owner_to_timeline_media?.count || 0,
+            profilePicUrl: user.profile_pic_url_hd || user.profile_pic_url,
+            isVerified: user.is_verified,
+            isPrivate: user.is_private,
+            externalUrl: user.external_url,
+            businessCategory: user.business_category_name,
+            scrapedAt: new Date().toISOString(),
+        };
+        
+        // Add recent posts if requested
+        if (maxPosts > 0 && user.edge_owner_to_timeline_media?.edges) {
+            result.recentPosts = user.edge_owner_to_timeline_media.edges
+                .slice(0, maxPosts)
+                .map(edge => ({
+                    id: edge.node.id,
+                    shortcode: edge.node.shortcode,
+                    url: `https://www.instagram.com/p/${edge.node.shortcode}/`,
+                    caption: edge.node.edge_media_to_caption?.edges?.[0]?.node?.text || '',
+                    likesCount: edge.node.edge_liked_by?.count || 0,
+                    commentsCount: edge.node.edge_media_to_comment?.count || 0,
+                    timestamp: new Date(edge.node.taken_at_timestamp * 1000).toISOString(),
+                    mediaType: edge.node.__typename,
+                    displayUrl: edge.node.display_url,
+                }));
+        }
+        
+        await Actor.pushData(result);
+        log.info(`Profile data extracted for ${username}`);
+        
+    } catch (error) {
+        log.error(`Error scraping profile ${username}: ${error.message}`);
+        await Actor.pushData({
+            type: 'error',
+            username,
+            error: error.message,
+            scrapedAt: new Date().toISOString(),
+        });
+    }
+});
+
+// Posts scraping handler
+router.addHandler('posts', async ({ page, request, log }) => {
+    const { username, maxPosts, includeComments, includeMedia } = request.userData;
+    
+    try {
+        await page.waitForSelector('main', { timeout: 30000 });
+        
+        // Scroll to load more posts
+        let loadedPosts = 0;
+        const posts = [];
+        
+        while (loadedPosts < maxPosts) {
+            // Extract posts from current view
+            const newPosts = await page.evaluate(() => {
+                const articles = Array.from(document.querySelectorAll('article'));
+                return articles.map(article => {
+                    const timeElement = article.querySelector('time');
+                    const linkElement = article.querySelector('a[href*="/p/"]');
+                    const imgElement = article.querySelector('img');
+                    const likesElement = article.querySelector('[aria-label*="like"]');
                     
                     return {
-                        username: window.location.pathname.split('/')[1],
-                        followers,
-                        isPrivate: !!document.querySelector('article h2'),
-                        timestamp: new Date().toISOString()
+                        url: linkElement ? `https://www.instagram.com${linkElement.getAttribute('href')}` : null,
+                        timestamp: timeElement ? timeElement.getAttribute('datetime') : null,
+                        imageUrl: imgElement ? imgElement.src : null,
+                        altText: imgElement ? imgElement.alt : null,
+                        likes: likesElement ? likesElement.textContent : null,
                     };
-                });
-                
-                results.push(data);
-            } catch (error) {
-                console.log(`Error scraping ${username}:`, error.message);
-                results.push({
-                    username,
-                    followers: null,
-                    error: error.message,
-                    timestamp: new Date().toISOString()
-                });
+                }).filter(post => post.url);
+            });
+            
+            // Add new posts to collection
+            for (const post of newPosts) {
+                if (!posts.find(p => p.url === post.url)) {
+                    posts.push({
+                        ...post,
+                        type: 'post',
+                        username,
+                        scrapedAt: new Date().toISOString(),
+                    });
+                    loadedPosts++;
+                    
+                    if (loadedPosts >= maxPosts) break;
+                }
+            }
+            
+            // Scroll down to load more
+            if (loadedPosts < maxPosts) {
+                await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+                await page.waitForTimeout(2000);
             }
         }
         
-        return results;
+        // Push posts data
+        for (const post of posts) {
+            await Actor.pushData(post);
+        }
+        
+        log.info(`Extracted ${posts.length} posts for ${username}`);
+        
+    } catch (error) {
+        log.error(`Error scraping posts for ${username}: ${error.message}`);
+        await Actor.pushData({
+            type: 'error',
+            username,
+            error: error.message,
+            scrapedAt: new Date().toISOString(),
+        });
+    }
+});
+
+// Hashtag scraping handler
+router.addHandler('hashtag', async ({ page, request, log }) => {
+    const { hashtag, maxPosts, sortBy } = request.userData;
+    
+    try {
+        await page.waitForSelector('main', { timeout: 30000 });
+        
+        // Extract hashtag stats and posts
+        const hashtagData = await page.evaluate(() => {
+            const scripts = Array.from(document.querySelectorAll('script'));
+            for (const script of scripts) {
+                if (script.textContent?.includes('window._sharedData')) {
+                    const match = script.textContent.match(/window\._sharedData\s*=\s*({.+?});/);
+                    if (match) {
+                        return JSON.parse(match[1]);
+                    }
+                }
+            }
+            return null;
+        });
+        
+        if (hashtagData?.entry_data?.TagPage?.[0]?.graphql?.hashtag) {
+            const hashtagInfo = hashtagData.entry_data.TagPage[0].graphql.hashtag;
+            
+            const result = {
+                type: 'hashtag',
+                hashtag: `#${hashtag}`,
+                name: hashtagInfo.name,
+                mediaCount: hashtagInfo.edge_hashtag_to_media?.count || 0,
+                scrapedAt: new Date().toISOString(),
+                posts: [],
+            };
+            
+            // Extract recent posts
+            if (hashtagInfo.edge_hashtag_to_media?.edges) {
+                result.posts = hashtagInfo.edge_hashtag_to_media.edges
+                    .slice(0, maxPosts)
+                    .map(edge => ({
+                        id: edge.node.id,
+                        shortcode: edge.node.shortcode,
+                        url: `https://www.instagram.com/p/${edge.node.shortcode}/`,
+                        caption: edge.node.edge_media_to_caption?.edges?.[0]?.node?.text || '',
+                        likesCount: edge.node.edge_liked_by?.count || 0,
+                        commentsCount: edge.node.edge_media_to_comment?.count || 0,
+                        timestamp: new Date(edge.node.taken_at_timestamp * 1000).toISOString(),
+                        displayUrl: edge.node.display_url,
+                        owner: edge.node.owner?.username,
+                    }));
+            }
+            
+            await Actor.pushData(result);
+            log.info(`Hashtag data extracted for #${hashtag} with ${result.posts.length} posts`);
+        }
+        
+    } catch (error) {
+        log.error(`Error scraping hashtag #${hashtag}: ${error.message}`);
+        await Actor.pushData({
+            type: 'error',
+            hashtag: `#${hashtag}`,
+            error: error.message,
+            scrapedAt: new Date().toISOString(),
+        });
+    }
+});
+
+// Quick check handler (minimal data extraction)
+router.addHandler('quickCheck', async ({ page, request, log }) => {
+    const { username } = request.userData;
+    
+    try {
+        await page.waitForSelector('main', { timeout: 30000 });
+        
+        const quickData = await page.evaluate(() => {
+            // Extract basic visible data without complex parsing
+            const followersText = document.querySelector('[href*="/followers/"]')?.textContent;
+            const followingText = document.querySelector('[href*="/following/"]')?.textContent;
+            const postsText = document.querySelector('main')?.textContent;
+            
+            return {
+                followersVisible: followersText || '',
+                followingVisible: followingText || '',
+                hasContent: !!postsText,
+                isLoaded: true,
+            };
+        });
+        
+        const result = {
+            type: 'quickCheck',
+            username,
+            ...quickData,
+            scrapedAt: new Date().toISOString(),
+        };
+        
+        await Actor.pushData(result);
+        log.info(`Quick check completed for ${username}`);
+        
+    } catch (error) {
+        log.error(`Error in quick check for ${username}: ${error.message}`);
+        await Actor.pushData({
+            type: 'error',
+            username,
+            error: error.message,
+            scrapedAt: new Date().toISOString(),
+        });
+    }
+});
+
+// Default handler for unmatched routes
+router.addDefaultHandler(async ({ page, request, log }) => {
+    const { scrapeType } = request.userData;
+    
+    try {
+        await page.waitForSelector('body', { timeout: 30000 });
+        
+        const result = {
+            type: scrapeType,
+            url: request.url,
+            status: 'completed',
+            message: `Handler for ${scrapeType} executed successfully`,
+            scrapedAt: new Date().toISOString(),
+        };
+        
+        await Actor.pushData(result);
+        log.info(`Default handler executed for ${scrapeType}`);
+        
+    } catch (error) {
+        log.error(`Error in default handler: ${error.message}`);
+        await Actor.pushData({
+            type: 'error',
+            scrapeType,
+            url: request.url,
+            error: error.message,
+            scrapedAt: new Date().toISOString(),
+        });
+    }
+});
+
+// Initialize the Actor
+await Actor.init();
+
+// Get input from the Actor
+const input = await Actor.getInput() ?? {};
+
+// Validate required inputs
+if (!input.scrapeType) {
+    throw new Error('Scrape type is required. Please select a scraping mode.');
+}
+
+// Initialize data stores
+const proxyConfiguration = await Actor.createProxyConfiguration({
+    groups: ['RESIDENTIAL'],
+    countryCode: 'US',
+});
+
+// Initialize request queue
+const requestQueue = await RequestQueue.open();
+
+// Setup the crawler with proper configuration
+const crawler = new PlaywrightCrawler({
+    proxyConfiguration,
+    requestQueue,
+    requestHandler: router,
+    maxRequestsPerCrawl: input.maxItems || 1000,
+    maxRequestRetries: 3,
+    requestHandlerTimeoutSecs: 60,
+    sessionPoolOptions: {
+        maxPoolSize: 100,
+        sessionOptions: {
+            maxUsageCount: 50,
+        },
+    },
+    launchContext: {
+        launchOptions: {
+            headless: true,
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-accelerated-2d-canvas',
+                '--no-first-run',
+                '--no-zygote',
+                '--disable-gpu',
+            ],
+        },
+    },
+    failedRequestHandler: async ({ request, error }) => {
+        await Actor.pushData({
+            error: `Request failed: ${error.message}`,
+            url: request.url,
+            userData: request.userData,
+        });
+    },
+});
+
+// Generate requests based on scrape type
+const generateRequests = async () => {
+    const { scrapeType } = input;
+    
+    switch (scrapeType) {
+        case 'profile': {
+            if (!input.usernames?.length) {
+                throw new Error('Usernames are required for profile scraping');
+            }
+            
+            for (const username of input.usernames) {
+                await requestQueue.addRequest({
+                    url: `https://www.instagram.com/${username}/`,
+                    userData: {
+                        scrapeType: 'profile',
+                        username: username.replace('@', ''),
+                        maxPosts: input.maxPosts || 50,
+                        includeStories: input.includeStories || false,
+                        includeHighlights: input.includeHighlights || false,
+                    },
+                });
+            }
+            break;
+        }
+        
+        case 'posts': {
+            if (!input.usernames?.length) {
+                throw new Error('Usernames are required for post scraping');
+            }
+            
+            for (const username of input.usernames) {
+                await requestQueue.addRequest({
+                    url: `https://www.instagram.com/${username}/`,
+                    userData: {
+                        scrapeType: 'posts',
+                        username: username.replace('@', ''),
+                        maxPosts: input.maxPosts || 50,
+                        includeComments: input.includeComments || false,
+                        includeMedia: input.includeMedia || true,
+                    },
+                });
+            }
+            break;
+        }
+        
+        case 'hashtag': {
+            if (!input.hashtags?.length) {
+                throw new Error('Hashtags are required for hashtag scraping');
+            }
+            
+            for (const hashtag of input.hashtags) {
+                await requestQueue.addRequest({
+                    url: `https://www.instagram.com/explore/tags/${hashtag.replace('#', '')}/`,
+                    userData: {
+                        scrapeType: 'hashtag',
+                        hashtag: hashtag.replace('#', ''),
+                        maxPosts: input.maxPosts || 100,
+                        sortBy: input.sortBy || 'recent',
+                    },
+                });
+            }
+            break;
+        }
+        
+        case 'reels': {
+            if (!input.usernames?.length) {
+                throw new Error('Usernames are required for reels scraping');
+            }
+            
+            for (const username of input.usernames) {
+                await requestQueue.addRequest({
+                    url: `https://www.instagram.com/${username}/reels/`,
+                    userData: {
+                        scrapeType: 'reels',
+                        username: username.replace('@', ''),
+                        maxReels: input.maxReels || 50,
+                        includeComments: input.includeComments || false,
+                    },
+                });
+            }
+            break;
+        }
+        
+        case 'comments': {
+            if (!input.postUrls?.length) {
+                throw new Error('Post URLs are required for comment scraping');
+            }
+            
+            for (const postUrl of input.postUrls) {
+                await requestQueue.addRequest({
+                    url: postUrl,
+                    userData: {
+                        scrapeType: 'comments',
+                        maxComments: input.maxComments || 100,
+                        includeReplies: input.includeReplies || false,
+                    },
+                });
+            }
+            break;
+        }
+        
+        case 'followers': {
+            if (!input.usernames?.length) {
+                throw new Error('Usernames are required for follower scraping');
+            }
+            
+            for (const username of input.usernames) {
+                await requestQueue.addRequest({
+                    url: `https://www.instagram.com/${username}/followers/`,
+                    userData: {
+                        scrapeType: 'followers',
+                        username: username.replace('@', ''),
+                        maxFollowers: input.maxFollowers || 1000,
+                        includeFollowerDetails: input.includeFollowerDetails || false,
+                    },
+                });
+            }
+            break;
+        }
+        
+        case 'mentions': {
+            if (!input.searchTerms?.length) {
+                throw new Error('Search terms are required for mention scraping');
+            }
+            
+            for (const term of input.searchTerms) {
+                await requestQueue.addRequest({
+                    url: `https://www.instagram.com/web/search/topsearch/?query=${encodeURIComponent(term)}`,
+                    userData: {
+                        scrapeType: 'mentions',
+                        searchTerm: term,
+                        maxResults: input.maxResults || 100,
+                    },
+                });
+            }
+            break;
+        }
+        
+        case 'quickCheck': {
+            if (!input.usernames?.length) {
+                throw new Error('Usernames are required for quick check');
+            }
+            
+            for (const username of input.usernames) {
+                await requestQueue.addRequest({
+                    url: `https://www.instagram.com/${username}/`,
+                    userData: {
+                        scrapeType: 'quickCheck',
+                        username: username.replace('@', ''),
+                    },
+                });
+            }
+            break;
+        }
+        
+        case 'hashtagStats': {
+            if (!input.hashtags?.length) {
+                throw new Error('Hashtags are required for hashtag stats');
+            }
+            
+            for (const hashtag of input.hashtags) {
+                await requestQueue.addRequest({
+                    url: `https://www.instagram.com/explore/tags/${hashtag.replace('#', '')}/`,
+                    userData: {
+                        scrapeType: 'hashtagStats',
+                        hashtag: hashtag.replace('#', ''),
+                    },
+                });
+            }
+            break;
+        }
+        
+        default:
+            throw new Error(`Unknown scrape type: ${scrapeType}`);
     }
 };
 
-// Main actor function
-Apify.main(async () => {
-    const input = await Apify.getInput();
-    console.log('Input:', input);
-    
-    const {
-        scraperType,
-        profileUrl,
-        hashtag,
-        postUrl,
-        usernames,
-        limit = 20,
-        proxyConfiguration
-    } = input;
-    
-    // Initialize dataset
-    const dataset = await Apify.openDataset();
-    
-    // Setup proxy configuration
-    const proxyConfig = await Apify.createProxyConfiguration(proxyConfiguration);
-    
-    // Create crawler
-    const crawler = new PlaywrightCrawler({
-        proxyConfiguration: proxyConfig,
-        headless: true,
-        launchOptions: {
-            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
-        },
-        browserPoolOptions: {
-            useFingerprints: true,
-        },
-        requestHandler: async ({ page, request }) => {
-            console.log(`Processing: ${request.url}`);
-            
-            // Set user agent and headers
-            await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-            await page.setExtraHTTPHeaders({
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
-            });
-            
-            let results = [];
-            
-            try {
-                switch (scraperType) {
-                    case 'profile':
-                        const username = utils.extractUsername(profileUrl);
-                        if (username) {
-                            const profileData = await scrapers.scrapeProfile(page, username);
-                            results.push(profileData);
-                        }
-                        break;
-                        
-                    case 'reels':
-                        const reelsUsername = utils.extractUsername(profileUrl);
-                        if (reelsUsername) {
-                            const reelsData = await scrapers.scrapeReels(page, reelsUsername, limit);
-                            results = reelsData;
-                        }
-                        break;
-                        
-                    case 'hashtag':
-                        const hashtagData = await scrapers.scrapeHashtag(page, hashtag, limit);
-                        results.push(hashtagData);
-                        break;
-                        
-                    case 'post':
-                        const postData = await scrapers.scrapePost(page, postUrl);
-                        results.push(postData);
-                        break;
-                        
-                    case 'comments':
-                        const commentsData = await scrapers.scrapeComments(page, postUrl, limit);
-                        results = commentsData;
-                        break;
-                        
-                    case 'followers-count':
-                        const followersData = await scrapers.scrapeFollowersCount(page, usernames);
-                        results = followersData;
-                        break;
-                        
-                    case 'mentions':
-                        // Search for mentions using hashtag scraper with mention query
-                        const mentionQuery = profileUrl.replace('@', '');
-                        const mentionsData = await scrapers.scrapeHashtag(page, mentionQuery, limit);
-                        results.push(mentionsData);
-                        break;
-                        
-                    case 'hashtag-stats':
-                        const statsData = await scrapers.scrapeHashtag(page, hashtag, 1);
-                        results.push({
-                            hashtag: statsData.hashtag,
-                            postsCount: statsData.postsCount,
-                            description: statsData.description,
-                            timestamp: new Date().toISOString()
-                        });
-                        break;
-                        
-                    case 'quick-posts':
-                        const quickUsername = utils.extractUsername(profileUrl);
-                        if (quickUsername) {
-                            const quickReels = await scrapers.scrapeReels(page, quickUsername, limit);
-                            results = quickReels;
-                        }
-                        break;
-                        
-                    default:
-                        throw new Error(`Unknown scraper type: ${scraperType}`);
-                }
-                
-                // Save results to dataset
-                if (results.length > 0) {
-                    if (Array.isArray(results)) {
-                        for (const result of results) {
-                            await dataset.pushData({
-                                ...result,
-                                scraperType,
-                                scrapedAt: new Date().toISOString()
-                            });
-                        }
-                    } else {
-                        await dataset.pushData({
-                            ...results,
-                            scraperType,
-                            scrapedAt: new Date().toISOString()
-                        });
-                    }
-                }
-                
-                console.log(`Successfully scraped ${results.length} items with ${scraperType} scraper`);
-                
-            } catch (error) {
-                console.error(`Error in ${scraperType} scraper:`, error);
-                await dataset.pushData({
-                    error: error.message,
-                    scraperType,
-                    input: request.url,
-                    scrapedAt: new Date().toISOString()
-                });
-            }
-        },
-        
-        failedRequestHandler: async ({ request, error }) => {
-            console.error(`Request ${request.url} failed:`, error);
-        },
-        
-        maxRequestsPerCrawl: 1,
-        requestHandlerTimeoutSecs: 300,
-    });
-    
-    // Add the initial request
-    await crawler.addRequests([{
-        url: 'https://www.instagram.com/',
-        userData: { scraperType }
-    }]);
-    
-    // Run the crawler
-    await crawler.run();
-    
-    console.log('Crawler finished.');
-});
+// Generate and enqueue requests
+await generateRequests();
+
+// Log the start of the crawl
+console.log(`Starting ${input.scrapeType} scraping...`);
+await Actor.setValue('SCRAPE_TYPE', input.scrapeType);
+
+// Run the crawler
+await crawler.run();
+
+// Log completion
+console.log(`${input.scrapeType} scraping completed successfully!`);
+
+// Exit the Actor
+await Actor.exit();

@@ -1,81 +1,194 @@
 {
-  "title": "Instagram Multi-Scraper Input",
-  "description": "Configure the Instagram scraper based on your needs",
+  "title": "🔥 Instagram Multi-Purpose Scraper",
+  "description": "Extract comprehensive data from Instagram with multiple scraping modes. Choose your scraping type and configure the specific fields below. 🚀 Quick start: Select 'Profile Scraper' and enter a username to try it out. 📖 Need help? Check the README for detailed instructions and examples.",
   "type": "object",
   "schemaVersion": 1,
   "properties": {
-    "scraperType": {
-      "title": "Scraper Type",
+    "scrapeType": {
+      "title": "🎯 Scraping Mode",
       "type": "string",
-      "description": "Choose the type of Instagram data to scrape",
+      "description": "Select what type of Instagram data you want to scrape",
       "enum": [
         "profile",
-        "reels", 
+        "posts", 
         "hashtag",
-        "post",
+        "reels",
         "comments",
+        "followers",
         "mentions",
-        "quick-posts",
-        "followers-count",
-        "hashtag-stats"
+        "quickCheck",
+        "hashtagStats"
       ],
       "enumTitles": [
         "👤 Instagram Profile Scraper",
-        "🎞️ Instagram Reel Scraper", 
+        "📷 Instagram Post Scraper", 
         "#️⃣ Instagram Hashtag Scraper",
-        "📷 Instagram Post Scraper",
+        "🎞️ Instagram Reel Scraper",
         "💬 Instagram Comments Scraper",
+        "👥 Instagram Followers Count Scraper",
         "🏷️ Instagram Mentions Scraper",
         "✅ Quick Instagram Posts Checker",
-        "👥 Instagram Followers Count Scraper",
         "📊 Instagram Hashtag Stats"
       ],
-      "default": "profile"
+      "default": "profile",
+      "editor": "select"
     },
-    "profileUrl": {
-      "title": "Profile URL or Username",
-      "type": "string",
-      "description": "Instagram profile URL or username (e.g., 'username' or 'https://instagram.com/username'). Required for: Profile, Reels, Mentions, Quick Posts scrapers.",
-      "editor": "textfield",
-      "example": "cristiano"
-    },
-    "hashtag": {
-      "title": "Hashtag",
-      "type": "string", 
-      "description": "Hashtag to scrape without the # symbol (e.g., 'travel'). Required for: Hashtag, Hashtag Stats scrapers.",
-      "editor": "textfield",
-      "example": "travel"
-    },
-    "postUrl": {
-      "title": "Post URL",
-      "type": "string",
-      "description": "Full Instagram post or reel URL. Required for: Post, Comments scrapers.",
-      "editor": "textfield",
-      "example": "https://www.instagram.com/p/ABC123/"
-    },
+    
     "usernames": {
-      "title": "Usernames List",
+      "title": "👤 Instagram Usernames",
       "type": "array",
-      "description": "List of usernames for bulk followers count check. Required for: Followers Count scraper. Enter one username per line.",
-      "editor": "stringList"
+      "description": "List of Instagram usernames to scrape (without @). Required for: Profile, Posts, Reels, Followers, Quick Check modes.",
+      "editor": "stringList",
+      "items": {
+        "type": "string"
+      },
+      "prefill": ["google", "instagram"],
+      "sectionCaption": "📝 Target Accounts"
     },
-    "limit": {
-      "title": "Results Limit",
+    
+    "hashtags": {
+      "title": "#️⃣ Hashtags",
+      "type": "array", 
+      "description": "List of hashtags to scrape (without #). Required for: Hashtag and Hashtag Stats modes.",
+      "editor": "stringList",
+      "items": {
+        "type": "string"
+      },
+      "prefill": ["travel", "food", "technology"],
+      "sectionCaption": "🏷️ Hashtag Targets"
+    },
+    
+    "postUrls": {
+      "title": "🔗 Instagram Post URLs",
+      "type": "array",
+      "description": "Full Instagram post URLs to scrape comments from. Required for: Comments mode.",
+      "editor": "stringList", 
+      "items": {
+        "type": "string"
+      },
+      "prefill": ["https://www.instagram.com/p/EXAMPLE123/"],
+      "sectionCaption": "💬 Comment Sources"
+    },
+    
+    "searchTerms": {
+      "title": "🔍 Search Terms",
+      "type": "array",
+      "description": "Terms to search for mentions. Required for: Mentions mode.",
+      "editor": "stringList",
+      "items": {
+        "type": "string" 
+      },
+      "prefill": ["your brand", "your product"],
+      "sectionCaption": "🏷️ Mention Tracking"
+    },
+    
+    "maxItems": {
+      "title": "📊 Maximum Items",
       "type": "integer",
-      "description": "Maximum number of items to scrape (used for scrapers that return multiple results)",
+      "description": "Maximum number of items to scrape overall (applies to all modes)",
       "minimum": 1,
-      "maximum": 1000,
-      "default": 20
+      "maximum": 10000,
+      "default": 1000,
+      "sectionCaption": "⚙️ General Settings"
     },
-    "proxyConfiguration": {
-      "title": "Proxy Configuration",
-      "type": "object",
-      "description": "Proxy settings for avoiding rate limits (recommended for production use)",
-      "editor": "proxy",
-      "default": {
-        "useApifyProxy": true
-      }
+    
+    "maxPosts": {
+      "title": "📷 Max Posts per Profile/Hashtag",
+      "type": "integer",
+      "description": "Maximum posts to scrape per profile or hashtag",
+      "minimum": 0,
+      "maximum": 1000,
+      "default": 50
+    },
+    
+    "maxReels": {
+      "title": "🎞️ Max Reels per Profile", 
+      "type": "integer",
+      "description": "Maximum reels to scrape per profile",
+      "minimum": 0,
+      "maximum": 500,
+      "default": 50
+    },
+    
+    "maxComments": {
+      "title": "💬 Max Comments per Post",
+      "type": "integer", 
+      "description": "Maximum comments to scrape per post",
+      "minimum": 0,
+      "maximum": 1000,
+      "default": 100
+    },
+    
+    "maxFollowers": {
+      "title": "👥 Max Followers to Extract",
+      "type": "integer",
+      "description": "Maximum followers to extract per profile",
+      "minimum": 0, 
+      "maximum": 5000,
+      "default": 1000
+    },
+    
+    "maxResults": {
+      "title": "🔍 Max Search Results",
+      "type": "integer",
+      "description": "Maximum search results for mentions",
+      "minimum": 0,
+      "maximum": 500, 
+      "default": 100
+    },
+    
+    "includeComments": {
+      "title": "💬 Include Comments",
+      "type": "boolean",
+      "description": "Extract comments data when scraping posts/reels", 
+      "default": false,
+      "sectionCaption": "🔧 Advanced Options"
+    },
+    
+    "includeMedia": {
+      "title": "🖼️ Include Media URLs",
+      "type": "boolean",
+      "description": "Include image/video URLs in the results",
+      "default": true
+    },
+    
+    "includeStories": {
+      "title": "📖 Include Stories",
+      "type": "boolean", 
+      "description": "Include stories data (when available)",
+      "default": false
+    },
+    
+    "includeHighlights": {
+      "title": "⭐ Include Highlights",
+      "type": "boolean",
+      "description": "Include highlights data (when available)", 
+      "default": false
+    },
+    
+    "includeReplies": {
+      "title": "↩️ Include Comment Replies",
+      "type": "boolean",
+      "description": "Include replies to comments",
+      "default": false
+    },
+    
+    "includeFollowerDetails": {
+      "title": "👤 Include Follower Details", 
+      "type": "boolean",
+      "description": "Extract detailed follower profile information",
+      "default": false
+    },
+    
+    "sortBy": {
+      "title": "📊 Sort Posts By",
+      "type": "string",
+      "description": "How to sort posts in hashtag results",
+      "enum": ["recent", "top"],
+      "enumTitles": ["Most Recent", "Top Posts"],
+      "default": "recent",
+      "editor": "select"
     }
   },
-  "required": ["scraperType"]
+  "required": ["scrapeType"]
 }

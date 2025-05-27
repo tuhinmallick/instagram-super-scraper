@@ -1,0 +1,12 @@
+{
+  "actorSpecification": 1,
+  "name": "instagram-multi-scraper",
+  "title": "🔥 Instagram Multi-Purpose Scraper",
+  "description": "Comprehensive Instagram scraper supporting profiles, posts, hashtags, reels, comments, followers, mentions, and quick checks. Extract data efficiently with customizable options.",
+  "version": "1.0.0",
+  "meta": {
+    "templateId": "javascript-crawlee-playwright"
+  },
+  "input": "./input_schema.json",
+  "dockerfile": "./Dockerfile"
+}
