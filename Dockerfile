@@ -1,4 +1,4 @@
-lFROM apify/actor-node-playwright-chrome:20
+FROM apify/actor-node-playwright-chrome:20
 
 # Copy package files first
 COPY package*.json ./
